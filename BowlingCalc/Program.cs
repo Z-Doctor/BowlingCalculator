@@ -5,41 +5,41 @@ using System.Linq;
 namespace BowlingCalc {
     class Program {
         static void Main(string[] args) {
-            Console.WriteLine("Welcome to the Bowling Calculator.");
-            Console.WriteLine("How many are playing?");
+            WelcomeMessage();
+            GetPlayerAmount(out int playerCount);
+            GetPlayerOptionalNames(out string[] playerNames);
+            CreateBowlingGame(out BowlingGame game, in playerCount, in playerNames);
+            RunGame(in game);
+            EndGame(in game);
 
-            Console.Write("Players: ");
-            int playerCount;
-            while (!int.TryParse(Console.ReadLine(), out playerCount)) {
-                Console.WriteLine("You have entered an invalid Value, try again.");
-                Console.WriteLine("How many are playing?");
-                Console.Write("Players: ");
+            // User press enter to close
+            Console.WriteLine("Press enter to exit.");
+            Console.ReadLine();
+        }
+
+        private static void EndGame(in BowlingGame game) {
+            Console.WriteLine("The game has ended");
+            Console.WriteLine("Here are the scores.");
+            game.ListScores();
+
+            game.GetWinners(out PlayerData[] winners, out int highScore);
+
+            if (winners.Length > 1) {
+                Console.WriteLine($"{string.Join(winners.Length > 2 ? ", " : " ", winners.Select(data => { return data == winners.Last() ? "and " + data.PlayerName : data.PlayerName; }))} " +
+                    $"have{(winners.Length > 2 ? " all" : "")} won with {highScore} {(highScore > 1 || highScore == 0 ? "points" : "point")}");
+            } else {
+                var player = winners.First();
+                Console.WriteLine($"{player.PlayerName} has won with a total of {player.Score} {(player.Score > 1 || player.Score == 0 ? "points" : "point")}");
             }
-            Console.WriteLine($"Players playing: {playerCount}");
+        }
 
-            Console.WriteLine("You can specify player names if you'd like. Just input them sperated by a ','. Or just hit enter.");
-            Console.Write("Names: ");
-
-            BowlingGame game;
-            string inputName = Console.ReadLine();
-            if (string.IsNullOrEmpty(inputName))
-                game = new BowlingGame(playerCount);
-            else {
-                game = new BowlingGame(playerCount, inputName.Split(',').Where(name => !string.IsNullOrEmpty(name)).Select(name => name.Trim()).ToArray());
-            }
-
-            Console.WriteLine("These are our Players.");
-            Console.WriteLine(string.Join(", ", game.Players.Select(data => data.PlayerName)));
-
-
-            Console.WriteLine("Let's Start");
-
-            for (int round = 1; round <= BowlingGame.Total_Frames; round++) {
-                Console.WriteLine($"Round {round}");
-                foreach (var player in game.Players) {
+        private static void RunGame(in BowlingGame game) {
+            while (!game.IsOver) {
+                Console.WriteLine($"Round {game.Round}");
+                for (int i = 0; i < game.PlayerCount; i++) {
+                    var player = game.CurrentPlayer;
                     Console.WriteLine($"Player turn: {player.PlayerName}");
-                    var frame = new BowlingFrame(round == BowlingGame.Total_Frames);
-                    player.Frames[round - 1] = frame;
+                    var frame = new BowlingFrame(game);
                     for (int ball = 1; ball <= BowlingFrame.Balls_Per_Frame; ball++) {
                         Console.Write($"Pins Hit: ");
 
@@ -71,33 +71,45 @@ namespace BowlingCalc {
                     }
                     Console.WriteLine($"{player.PlayerName}'s turn has ended. They have scored {frame.Score} {(frame.Score > 1 || frame.Score == 0 ? "points" : "point")}" +
                         $" for a total of {player.Score} {(player.Score > 1 || player.Score == 0 ? "points" : "point")}");
+                    game.NextPlayer();
                 }
+                game.NextRound();
             }
+        }
 
-            Console.WriteLine("The game has ended");
-            Console.WriteLine("Here are the scores.");
-            foreach (var player in game.Players) {
-                Console.WriteLine($"{player.PlayerName} has scored {player.Score} {(player.Score > 1 || player.Score == 0 ? "points" : "point")}");
+        private static void CreateBowlingGame(out BowlingGame game, in int playerCount, in string[] playerNames) {
+            game = new BowlingGame(playerCount, playerNames);
+
+            Console.WriteLine("These are our Players.");
+            game.PrintPlayers();
+            Console.WriteLine("Let's Start");
+        }
+
+        private static void GetPlayerOptionalNames(out string[] playerNames) {
+            Console.WriteLine("You can specify player names if you'd like. Just input them sperated by a ','. Or just hit enter.");
+            Console.Write("Names: ");
+
+            string inputName = Console.ReadLine();
+            if (string.IsNullOrEmpty(inputName))
+                playerNames = null;
+            else
+                playerNames = inputName.Split(',').Where(name => !string.IsNullOrEmpty(name)).Select(name => name.Trim()).ToArray();
+        }
+
+        private static void GetPlayerAmount(out int playerCount) {
+            Console.WriteLine("How many are playing?");
+
+            Console.Write("Players: ");
+            while (!int.TryParse(Console.ReadLine(), out playerCount)) {
+                Console.WriteLine("You have entered an invalid Value, try again.");
+                Console.WriteLine("How many are playing?");
+                Console.Write("Players: ");
             }
+            Console.WriteLine($"Players playing: {playerCount}");
+        }
 
-            int highestScore = game.Players.Aggregate((winningPlayer, player) => {
-                if (winningPlayer is null)
-                    return player;
-                if (winningPlayer.Score < player.Score)
-                    return player;
-                return winningPlayer;
-            }).Score;
-
-            var winners = game.Players.Where(data => data.Score == highestScore).Select(data => data).ToArray();
-
-            if (winners.Length > 1) {
-                Console.WriteLine($"{string.Join(winners.Length > 2 ? ", " : " ", winners.Select(data => { return data == winners.Last() ? "and " + data.PlayerName : data.PlayerName; }))} " +
-                    $"have {(winners.Length > 2 ? "all" : "")} won with {highestScore} {(highestScore > 1 || highestScore == 0 ? "points" : "point")}");
-            } else {
-                var player = winners.First();
-                Console.WriteLine($"{player.PlayerName} has won with a total of {player.Score} {(player.Score > 1 || player.Score == 0 ? "points" : "point")}");
-            }
-            Console.ReadLine();
+        public static void WelcomeMessage() {
+            Console.WriteLine("Welcome to the Bowling Calculator.");
         }
 
     }
@@ -107,16 +119,36 @@ namespace BowlingCalc {
         public const int Last_Spare_Extra_Balls = 1;
         public const int Last_Strike_Extra_Balls = 2;
 
-        public PlayerData[] Players { get; }
+        protected LinkedList<PlayerData> Players { get; }
+        //public PlayerData[] Players { get; }
+
+        public int Round { get; private set; } = 1;
+        public int PlayerCount { get; }
+
+        public bool IsOver { get => Round > Total_Frames; }
+
+        protected LinkedListNode<PlayerData> CurrentPlayerNode { get; set; }
+        public PlayerData CurrentPlayer { get => CurrentPlayerNode.Value; }
 
         public BowlingGame(int playerCount, params string[] names) {
-            Players = new PlayerData[playerCount];
+            PlayerCount = playerCount;
+            var playerList = new PlayerData[playerCount];
             for (int i = 0; i < playerCount; i++) {
-                if (names.Length > i)
-                    Players[i] = new PlayerData(names[i]);
+                if (names?.Length > i)
+                    playerList[i] = new PlayerData(names[i]);
                 else
-                    Players[i] = new PlayerData();
+                    playerList[i] = new PlayerData();
             }
+            Players = new LinkedList<PlayerData>(playerList);
+
+            CurrentPlayerNode = Players.First;
+        }
+
+        public PlayerData NextPlayer() {
+            CurrentPlayerNode = CurrentPlayerNode.Next;
+            if (CurrentPlayerNode is null)
+                CurrentPlayerNode = Players.First;
+            return CurrentPlayer;
         }
 
         public static void ExtraSpare(PlayerData player) {
@@ -179,6 +211,32 @@ namespace BowlingCalc {
             }
         }
 
+        internal void NextRound() {
+            Round++;
+        }
+
+        public void PrintPlayers() {
+            Console.WriteLine(string.Join(", ", Players.Select(data => data.PlayerName)));
+        }
+
+        public void ListScores() {
+            foreach (var player in Players) {
+                Console.WriteLine($"{player.PlayerName} has scored {player.Score} {(player.Score > 1 || player.Score == 0 ? "points" : "point")}");
+            }
+        }
+
+        public void GetWinners(out PlayerData[] winners, out int highScore) {
+            highScore = Players.Aggregate((winningPlayer, player) => {
+                if (winningPlayer is null)
+                    return player;
+                if (winningPlayer.Score < player.Score)
+                    return player;
+                return winningPlayer;
+            }).Score;
+
+            int score = highScore;
+            winners = Players.Where(data => data.Score == score).Select(data => data).ToArray();
+        }
     }
 
     public class PlayerData {
@@ -224,8 +282,9 @@ namespace BowlingCalc {
 
         public bool LastFrame { get; }
 
-        public BowlingFrame(bool isLastFrame = false) {
-            LastFrame = isLastFrame;
+        public BowlingFrame(in BowlingGame game) {
+            LastFrame = game.Round == BowlingGame.Total_Frames;
+            game.CurrentPlayer.Frames[game.Round - 1] = this;
         }
 
         public int HitPins(int count, bool isFoul = false) {
